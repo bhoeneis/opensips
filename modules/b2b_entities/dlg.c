@@ -2582,6 +2582,98 @@ dlg_leg_t* b2b_find_leg(b2b_dlg_t* dlg, str to_tag)
 	return 0;
 }
 
+/* Function to check whether a given Dialog has the expected Call-Id, from-tag and to-tag
+ * (as given in the arguments)
+ *
+ * Return values
+ * -1: Error
+ *  0: no match
+ *  1: full match (bot to_tags may be empty)
+ *  2: partial match (no or emtpy to_tag in dlg)
+ *  3: partial match (no or emtpy to tag_in 3rd argument)
+ *
+ */
+int b2b_match_dlg(b2b_dlg_t* dlg, str callid, str from_tag, str to_tag)
+{
+	// dlg_leg_t* leg;
+
+	LM_DBG("XXX: from_tag [%.*s]\n", from_tag.len, from_tag.s);
+	LM_DBG("XXX: to_tag [%.*s]\n",   to_tag.len,   to_tag.s);
+	LM_DBG("XXX: callid [%.*s]\n",   callid.len, callid.s);
+	if(dlg == NULL) {
+		LM_ERR("XXX: No dialog provided (dlg == NULL)!\n");
+		return -1;
+	}
+	else {
+		LM_DBG("XXX: dlg->tag[CALLER_LEG] [%.*s]\n",
+			dlg->tag[CALLER_LEG].len, dlg->tag[CALLER_LEG].s);
+		LM_DBG("XXX: dlg->tag[CALLEE_LEG] [%.*s]\n",
+			dlg->tag[CALLEE_LEG].len, dlg->tag[CALLEE_LEG].s);
+		LM_DBG("XXX: dlg->callid [%.*s]\n",
+			dlg->callid.len, dlg->callid.s);
+		/* LM_DBG("XXX: dlg->last_reply_code [%d]\n",
+			dlg->last_reply_code);
+		*/
+	}
+
+	if(dlg->callid.len == callid.len &&
+		strncmp(callid.s, dlg->callid.s, callid.len)== 0)
+	{
+	  // callids matched
+	}
+	else {
+		LM_DBG("XXX: Provided callid [%.*s] does not match with dlg->callid [%.*s]\n",
+		       callid.len, callid.s, dlg->callid.len, dlg->callid.s);
+		return 0;
+	}
+
+	if(dlg->tag[CALLER_LEG].len == from_tag.len &&
+		strncmp(from_tag.s, dlg->tag[CALLER_LEG].s, from_tag.len)== 0)
+	{
+	  // from_tags matched
+	}
+	else {
+		LM_DBG("XXX: Provided from_tag [%.*s] does not match with dlg->tag[CALLER_LEG] [%.*s]\n",
+		       from_tag.len, from_tag.s, dlg->tag[CALLER_LEG].len, dlg->tag[CALLER_LEG].s);
+		return 0;
+	}
+
+	if(dlg->tag[CALLEE_LEG].len == to_tag.len &&
+		strncmp(to_tag.s, dlg->tag[CALLEE_LEG].s, to_tag.len)== 0)
+	{
+	  // to_tag_matched
+	}
+	else {
+		LM_DBG("XXX: Provided to_tag [%.*s] does not match with dlg->tag[CALLEE_LEG] [%.*s]\n",
+		       to_tag.len, to_tag.s, dlg->tag[CALLEE_LEG].len, dlg->tag[CALLEE_LEG].s);
+		if(dlg->tag[CALLEE_LEG].len == 0)
+			return 2;
+		else if(to_tag.len == 0)
+			return 3;
+		else
+			return 0;
+	}
+
+	// leg = dlg->legs;
+
+	/*	while(leg)
+	{
+	*/	/* compare the tags */
+	/*	if(to_tag.len == leg->tag.len &&
+				strncmp(to_tag.s, leg->tag.s, to_tag.len)==0) &&
+				from_tag.len == ?????leg->tag.len &&
+				strncmp(from_tag.s, ????leg->tag.s, from_tag.len)==0)
+		{
+			LM_DBG("Found existing leg\n");
+			return leg;
+		}
+		leg = leg->next;
+        } */
+
+
+	return 1;
+}
+
 dlg_leg_t* b2b_new_leg(struct sip_msg* msg, str* to_tag, int mem_type)
 {
 	str contact = {NULL, 0};
@@ -2923,6 +3015,8 @@ void b2b_tm_cback(struct cell *t, b2b_table htable, struct tmcb_params *ps)
 	unsigned int ua_flags = 0;
 	int ua_ev_type = -1;
 	int ua_auto_ack = 0;
+	int dlg_match = 0;
+	int leg_found = 0;
 
 	to_hdr_parsed.param_lst = from_hdr_parsed.param_lst = NULL;
 
@@ -3484,6 +3578,91 @@ dummy_reply:
 			dlg = new_dlg;
 			UPDATE_DBFLAG(dlg);
 		}
+		// else {
+			/* Check whether this is a new response from a forked leg */
+			dlg_match = b2b_match_dlg(dlg, callid, from_tag, to_tag);
+			LM_DBG("YYY: b2b_match_dialog returned %d\n", dlg_match);
+			// LM_DBG("b2b_match_dialog returned %d\n", b2b_match_dlg(dlg, callid, from_tag, (str) {}));
+
+			LM_DBG("YYY: searching legs for to_tag %d[%.*s]\n", to_tag.len,to_tag.len, to_tag.s);
+
+			leg_found = 0;
+			leg = dlg->legs; // b2b_find_leg(dlg, to_tag);
+			while(leg)
+			{
+				/* compare the tag */
+				if(to_tag.len == leg->tag.len &&
+						strncmp(to_tag.s, leg->tag.s, to_tag.len)==0)
+				{
+					LM_DBG("YYY: Found existing leg with current to_tag %d[%.*s]\n", leg->tag.len,leg->tag.len, leg->tag.s);
+					leg_found = 1;
+				}
+				else {
+					LM_DBG("YYY: Found other existing leg (to_tag %d[%.*s])\n", leg->tag.len,leg->tag.len, leg->tag.s);
+				}
+				leg = leg->next;
+			}
+			/* if (!leg_found)
+			 * {
+			 * 	leg = b2b_add_leg(dlg, msg, &to_tag);
+			 * 		if(leg == NULL)
+			 * 		{
+			 * 			LM_ERR("Failed to add dialog leg\n");
+			 * 			goto error;
+			 * 		}
+			 * 		else {
+			 * 			LM_DBG("YYY: New leg added with to_tag %d[%.*s]\n", leg->tag.len,leg->tag.len, leg->tag.s);
+			 * 		}
+			 * 		UPDATE_DBFLAG(dlg);
+			 * }
+			 */
+			/* if(!dlg_match && (dlg->state == B2B_NEW ||
+			 * 		dlg->state == B2B_NEW_AUTH ||
+			 *		dlg->state == B2B_EARLY)) // TODO: Sort out Race Condition
+			 */ 
+
+			/*
+			 * 	new_dlg = b2b_new_dlg(msg, &dlg->contact[CALLER_LEG],
+			 * 		dlg, &dlg->logic_key, &dlg->mod_name);
+			 * 	if(new_dlg == NULL)
+			 * 	{
+			 * 		LM_ERR("Failed to create b2b dialog structure\n");
+			 * 		goto error;
+			 * 	}
+			 * 	LM_DBG("Created new dialog structure %p\n", new_dlg);
+			 * 	LM_DBG("from_tag [%.*s] \n", from_tag.len, from_tag.s);
+			 * 	LM_DBG("to_tag [%.*s] \n", to_tag.len, to_tag.s);
+			 * 	str s1,s2;
+			 * 	
+			 * 	s1.s=from_tag.s;
+			 * 	s1.len=from_tag.len;
+			 * 
+			 * 	s2.s = to_tag.s;
+			 * 	s2.len = to_tag.len;
+			 * 	
+			 * 	// new_dlg->tag[CALLEE_LEG] = to_tag;
+			 * 	new_dlg->id = core_hash(&s1, &s2, server_hsize); // TODO: to_tag only
+			 * 	new_dlg->state = B2B_NEW;
+			 * 	new_dlg->b2b_cback = dlg->b2b_cback;
+			 * 	new_dlg->param = dlg->param;
+			 * 	new_dlg->free_param = dlg->free_param;
+			 * 	new_dlg->uac_tran = dlg->uac_tran;
+			 * 	new_dlg->uas_tran = dlg->uas_tran;
+			 * 	new_dlg->next = dlg->next;
+			 * 	new_dlg->prev = dlg->prev;
+			 * 	new_dlg->add_dlginfo = dlg->add_dlginfo;
+			 * 	new_dlg->last_method = dlg->last_method;
+			 * 	new_dlg->tracer = dlg->tracer;
+			 * 	new_dlg->ua_timer_list = dlg->ua_timer_list;
+			 * 	new_dlg->ua_flags = dlg->ua_flags;
+			 * 	
+			 * 	b2b_htable_insert(server_htable, dlg, hash_index, NULL, B2B_SERVER, 0, 1, ua_default_timeout);
+			 * 
+			 * 	dlg = new_dlg;
+			 * 	UPDATE_DBFLAG(dlg);
+			 * }
+			 */
+		// }
 
 		if(dlg->state == B2B_NEW ||
 			dlg->state == B2B_NEW_AUTH ||
@@ -3570,7 +3749,7 @@ dummy_reply:
 			{
 				LM_DBG("A final response\n");
 				/* if the dialog was already confirmed */
-				if(dlg->state == B2B_CONFIRMED)
+				if(dlg->state == B2B_CONFIRMED) // TODO: handle differently (Send 200 OK upstrean)
 				{
 					LM_DBG("The state is already confirmed\n");
 					leg = b2b_new_leg(msg, &to_tag, PKG_MEM_TYPE);
@@ -3603,7 +3782,7 @@ dummy_reply:
 					b2b_add_dlginfo_t add_infof= dlg->add_dlginfo;
 
 					/* delete all and add the confirmed leg */
-					b2b_delete_legs(&dlg->legs);
+					b2b_delete_legs(&dlg->legs);  // TODO: handle differently keep unconfirmed legs until CANCELed from upstream
 					leg = b2b_add_leg(dlg, msg, &to_tag);
 					if(leg == NULL)
 					{
